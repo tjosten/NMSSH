@@ -40,19 +40,19 @@
 #ifndef LIBSSH2_H
 #define LIBSSH2_H 1
 
-#define LIBSSH2_COPYRIGHT "2004-2015 The libssh2 project and its contributors."
+#define LIBSSH2_COPYRIGHT "2004-2016 The libssh2 project and its contributors."
 
 /* We use underscore instead of dash when appending DEV in dev versions just
    to make the BANNER define (used by src/session.c) be a valid SSH
    banner. Release versions have no appended strings and may of course not
    have dashes either. */
-#define LIBSSH2_VERSION "1.6.0"
+#define LIBSSH2_VERSION                             "1.8.1_DEV"
 
 /* The numeric version number is also available "in parts" by using these
    defines: */
-#define LIBSSH2_VERSION_MAJOR 1
-#define LIBSSH2_VERSION_MINOR 6
-#define LIBSSH2_VERSION_PATCH 0
+#define LIBSSH2_VERSION_MAJOR                       1
+#define LIBSSH2_VERSION_MINOR                       8
+#define LIBSSH2_VERSION_PATCH                       1
 
 /* This is the numeric version of the libssh2 version number, meant for easier
    parsing and comparions by programs. The LIBSSH2_VERSION_NUM define will
@@ -69,7 +69,7 @@
    and it is always a greater number in a more recent release. It makes
    comparisons with greater than and less than work.
 */
-#define LIBSSH2_VERSION_NUM 0x010600
+#define LIBSSH2_VERSION_NUM                         0x010801
 
 /*
  * This is the date and time when the full source package was created. The
@@ -80,7 +80,7 @@
  *
  * "Mon Feb 12 11:35:33 UTC 2007"
  */
-#define LIBSSH2_TIMESTAMP "Fri Jun 12 06:58:26 UTC 2015"
+#define LIBSSH2_TIMESTAMP "DEV"
 
 #ifndef RC_INVOKED
 
@@ -121,18 +121,27 @@ extern "C" {
 #if (defined(NETWARE) && !defined(__NOVELL_LIBC__))
 # include <sys/bsdskt.h>
 typedef unsigned char uint8_t;
+typedef unsigned short int uint16_t;
 typedef unsigned int uint32_t;
+typedef int int32_t;
+typedef unsigned long long uint64_t;
+typedef long long int64_t;
 #endif
 
 #ifdef _MSC_VER
 typedef unsigned char uint8_t;
+typedef unsigned short int uint16_t;
 typedef unsigned int uint32_t;
+typedef __int32 int32_t;
+typedef __int64 int64_t;
+typedef unsigned __int64 uint64_t;
 typedef unsigned __int64 libssh2_uint64_t;
 typedef __int64 libssh2_int64_t;
 #ifndef ssize_t
 typedef SSIZE_T ssize_t;
 #endif
 #else
+#include <stdint.h>
 typedef unsigned long long libssh2_uint64_t;
 typedef long long libssh2_int64_t;
 #endif
@@ -144,6 +153,77 @@ typedef SOCKET libssh2_socket_t;
 typedef int libssh2_socket_t;
 #define LIBSSH2_INVALID_SOCKET -1
 #endif /* WIN32 */
+
+/*
+ * Determine whether there is small or large file support on windows.
+ */
+
+#if defined(_MSC_VER) && !defined(_WIN32_WCE)
+#  if (_MSC_VER >= 900) && (_INTEGRAL_MAX_BITS >= 64)
+#    define LIBSSH2_USE_WIN32_LARGE_FILES
+#  else
+#    define LIBSSH2_USE_WIN32_SMALL_FILES
+#  endif
+#endif
+
+#if defined(__MINGW32__) && !defined(LIBSSH2_USE_WIN32_LARGE_FILES)
+#  define LIBSSH2_USE_WIN32_LARGE_FILES
+#endif
+
+#if defined(__WATCOMC__) && !defined(LIBSSH2_USE_WIN32_LARGE_FILES)
+#  define LIBSSH2_USE_WIN32_LARGE_FILES
+#endif
+
+#if defined(__POCC__)
+#  undef LIBSSH2_USE_WIN32_LARGE_FILES
+#endif
+
+#if defined(_WIN32) && !defined(LIBSSH2_USE_WIN32_LARGE_FILES) && \
+    !defined(LIBSSH2_USE_WIN32_SMALL_FILES)
+#  define LIBSSH2_USE_WIN32_SMALL_FILES
+#endif
+
+/*
+ * Large file (>2Gb) support using WIN32 functions.
+ */
+
+#ifdef LIBSSH2_USE_WIN32_LARGE_FILES
+#  include <io.h>
+#  include <sys/types.h>
+#  include <sys/stat.h>
+#  define LIBSSH2_STRUCT_STAT_SIZE_FORMAT    "%I64d"
+typedef struct _stati64 libssh2_struct_stat;
+typedef __int64 libssh2_struct_stat_size;
+#endif
+
+/*
+ * Small file (<2Gb) support using WIN32 functions.
+ */
+
+#ifdef LIBSSH2_USE_WIN32_SMALL_FILES
+#  include <sys/types.h>
+#  include <sys/stat.h>
+#  ifndef _WIN32_WCE
+#    define LIBSSH2_STRUCT_STAT_SIZE_FORMAT    "%d"
+typedef struct _stat libssh2_struct_stat;
+typedef off_t libssh2_struct_stat_size;
+#  endif
+#endif
+
+#ifndef LIBSSH2_STRUCT_STAT_SIZE_FORMAT
+#  ifdef __VMS
+/* We have to roll our own format here because %z is a C99-ism we don't have. */
+#    if __USE_OFF64_T || __USING_STD_STAT
+#      define LIBSSH2_STRUCT_STAT_SIZE_FORMAT      "%Ld"
+#    else
+#      define LIBSSH2_STRUCT_STAT_SIZE_FORMAT      "%d"
+#    endif
+#  else
+#    define LIBSSH2_STRUCT_STAT_SIZE_FORMAT      "%zd"
+#  endif
+typedef struct stat libssh2_struct_stat;
+typedef off_t libssh2_struct_stat_size;
+#endif
 
 /* Part of every banner, user specified or not */
 #define LIBSSH2_SSH_BANNER                  "SSH-2.0-libssh2_" LIBSSH2_VERSION
@@ -332,11 +412,16 @@ typedef struct _LIBSSH2_POLLFD {
 /* Hash Types */
 #define LIBSSH2_HOSTKEY_HASH_MD5                            1
 #define LIBSSH2_HOSTKEY_HASH_SHA1                           2
+#define LIBSSH2_HOSTKEY_HASH_SHA256                         3
 
 /* Hostkey Types */
-#define LIBSSH2_HOSTKEY_TYPE_UNKNOWN			    0
-#define LIBSSH2_HOSTKEY_TYPE_RSA			    1
-#define LIBSSH2_HOSTKEY_TYPE_DSS			    2
+#define LIBSSH2_HOSTKEY_TYPE_UNKNOWN            0
+#define LIBSSH2_HOSTKEY_TYPE_RSA                1
+#define LIBSSH2_HOSTKEY_TYPE_DSS                2
+#define LIBSSH2_HOSTKEY_TYPE_ECDSA_256          3
+#define LIBSSH2_HOSTKEY_TYPE_ECDSA_384          4
+#define LIBSSH2_HOSTKEY_TYPE_ECDSA_521          5
+#define LIBSSH2_HOSTKEY_TYPE_ED25519            6
 
 /* Disconnect Codes (defined by SSH protocol) */
 #define SSH_DISCONNECT_HOST_NOT_ALLOWED_TO_CONNECT          1
@@ -411,6 +496,8 @@ typedef struct _LIBSSH2_POLLFD {
 #define LIBSSH2_ERROR_ENCRYPT                   -44
 #define LIBSSH2_ERROR_BAD_SOCKET                -45
 #define LIBSSH2_ERROR_KNOWN_HOSTS               -46
+#define LIBSSH2_ERROR_CHANNEL_WINDOW_FULL       -47
+#define LIBSSH2_ERROR_KEYFILE_AUTH_FAILED       -48
 
 /* this is a define to provide the old (<= 1.2.7) name */
 #define LIBSSH2_ERROR_BANNER_NONE LIBSSH2_ERROR_BANNER_RECV
@@ -506,6 +593,9 @@ LIBSSH2_API int libssh2_session_last_error(LIBSSH2_SESSION *session,
                                            char **errmsg,
                                            int *errmsg_len, int want_buf);
 LIBSSH2_API int libssh2_session_last_errno(LIBSSH2_SESSION *session);
+LIBSSH2_API int libssh2_session_set_last_error(LIBSSH2_SESSION* session,
+                                               int errcode,
+                                               const char* errmsg);
 LIBSSH2_API int libssh2_session_block_directions(LIBSSH2_SESSION *session);
 
 LIBSSH2_API int libssh2_session_flag(LIBSSH2_SESSION *session, int flag,
@@ -596,7 +686,8 @@ LIBSSH2_API int
 libssh2_userauth_keyboard_interactive_ex(LIBSSH2_SESSION* session,
                                          const char *username,
                                          unsigned int username_len,
-                                         LIBSSH2_USERAUTH_KBDINT_RESPONSE_FUNC((*response_callback)));
+                                         LIBSSH2_USERAUTH_KBDINT_RESPONSE_FUNC(
+                                                       (*response_callback)));
 
 #define libssh2_userauth_keyboard_interactive(session, username,        \
                                               response_callback)        \
@@ -805,9 +896,14 @@ LIBSSH2_API int libssh2_channel_close(LIBSSH2_CHANNEL *channel);
 LIBSSH2_API int libssh2_channel_wait_closed(LIBSSH2_CHANNEL *channel);
 LIBSSH2_API int libssh2_channel_free(LIBSSH2_CHANNEL *channel);
 
+/* libssh2_scp_recv is DEPRECATED, do not use! */
 LIBSSH2_API LIBSSH2_CHANNEL *libssh2_scp_recv(LIBSSH2_SESSION *session,
                                               const char *path,
                                               struct stat *sb);
+/* Use libssh2_scp_recv2 for large (> 2GB) file support on windows */
+LIBSSH2_API LIBSSH2_CHANNEL *libssh2_scp_recv2(LIBSSH2_SESSION *session,
+                                               const char *path,
+                                               libssh2_struct_stat *sb);
 LIBSSH2_API LIBSSH2_CHANNEL *libssh2_scp_send_ex(LIBSSH2_SESSION *session,
                                                  const char *path, int mode,
                                                  size_t size, long mtime,
@@ -879,13 +975,17 @@ libssh2_knownhost_init(LIBSSH2_SESSION *session);
 #define LIBSSH2_KNOWNHOST_KEYENC_RAW      (1<<16)
 #define LIBSSH2_KNOWNHOST_KEYENC_BASE64   (2<<16)
 
-/* type of key (2 bits) */
-#define LIBSSH2_KNOWNHOST_KEY_MASK     (7<<18)
-#define LIBSSH2_KNOWNHOST_KEY_SHIFT    18
-#define LIBSSH2_KNOWNHOST_KEY_RSA1     (1<<18)
-#define LIBSSH2_KNOWNHOST_KEY_SSHRSA   (2<<18)
-#define LIBSSH2_KNOWNHOST_KEY_SSHDSS   (3<<18)
-#define LIBSSH2_KNOWNHOST_KEY_UNKNOWN  (7<<18)
+/* type of key (3 bits) */
+#define LIBSSH2_KNOWNHOST_KEY_MASK         (15<<18)
+#define LIBSSH2_KNOWNHOST_KEY_SHIFT        18
+#define LIBSSH2_KNOWNHOST_KEY_RSA1         (1<<18)
+#define LIBSSH2_KNOWNHOST_KEY_SSHRSA       (2<<18)
+#define LIBSSH2_KNOWNHOST_KEY_SSHDSS       (3<<18)
+#define LIBSSH2_KNOWNHOST_KEY_ECDSA_256    (4<<18)
+#define LIBSSH2_KNOWNHOST_KEY_ECDSA_384    (5<<18)
+#define LIBSSH2_KNOWNHOST_KEY_ECDSA_521    (6<<18)
+#define LIBSSH2_KNOWNHOST_KEY_ED25519      (7<<18)
+#define LIBSSH2_KNOWNHOST_KEY_UNKNOWN      (15<<18)
 
 LIBSSH2_API int
 libssh2_knownhost_add(LIBSSH2_KNOWNHOSTS *hosts,
